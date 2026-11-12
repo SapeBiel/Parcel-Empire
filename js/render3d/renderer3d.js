@@ -32,7 +32,8 @@ import { createBoxModel, createProductModel } from './products3d.js';
 import { EYE_HEIGHT, parkedVehicles, vehicleOnRoad } from '../systems/onFoot.js';
 import { courierLoad } from '../systems/workers.js';
 import { createCharacter } from './characters3d.js';
-import { addDetailMap, groundGrainTexture, setSurfaceEnvironment } from './materials3d.js';
+import { addDetailMap, groundGrainTexture, registerAssetMaterials, setSurfaceEnvironment } from './materials3d.js';
+import { assetSummary, grayMap, hasTextureSet, pbrMap } from './assets3d.js';
 import { roundedBoxGeometry } from './geometries3d.js';
 import { DOOR_RADIUS, heldBox, heldItems } from '../systems/handling.js';
 import { deliveryDoorPoint } from '../world/lotLayout.js';
@@ -179,6 +180,7 @@ export class Renderer3D {
     this.world = null;
 
     this.createNavigationArrow();
+    registerAssetMaterials(); // modelos externos precargados (si los hay): reflejos del cielo como el resto
     this.createViewModel();
     this.buildWorld();
     this.bindEvents();
@@ -420,9 +422,22 @@ export class Renderer3D {
     const maxTexture = this.renderer.capabilities.maxTextureSize;
     const scale = Math.min(1.5, maxTexture / Math.max(city.widthPx, city.heightPx));
     this.groundTexture = toTexture(renderGroundMap(city, scale));
-    // Grano fino repetido cada 90 px encima del mapa del suelo (asfalto y aceras no se ven lisos de cerca)
-    const groundMaterial = addDetailMap(new THREE.MeshLambertMaterial({ map: this.groundTexture }), groundGrainTexture(),
-      [city.widthPx / 90, city.heightPx / 90], 0.4);
+    // Grano fino repetido encima del mapa del suelo (asfalto y aceras no se ven lisos de cerca). Con el asfalto
+    // escaneado de ambientCG descargado se usa su textura (en gris) y su relieve real; si no, el grano procedural.
+    const groundMaterial = new THREE.MeshLambertMaterial({ map: this.groundTexture });
+    const scanned = hasTextureSet('asphalt') ? grayMap('asphalt', [1, 1], 0.5) : null;
+    if (scanned) {
+      this.groundExtras = [scanned];
+      addDetailMap(groundMaterial, scanned, [city.widthPx / 64, city.heightPx / 64], 0.55, 900, 0.5);
+      const normal = pbrMap('asphalt', 'normal', [city.widthPx / 64, city.heightPx / 64]);
+      if (normal) {
+        groundMaterial.normalMap = normal;
+        groundMaterial.normalScale.set(0.7, 0.7);
+        this.groundExtras.push(normal);
+      }
+    } else {
+      addDetailMap(groundMaterial, groundGrainTexture(), [city.widthPx / 90, city.heightPx / 90], 0.4);
+    }
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(city.widthPx, city.heightPx).rotateX(-Math.PI / 2), groundMaterial);
     ground.position.set(city.widthPx / 2, 0, city.heightPx / 2);
     ground.receiveShadow = true;
@@ -466,6 +481,8 @@ export class Renderer3D {
     this.furniture?.dispose();
     this.depotInterior?.dispose();
     this.groundTexture?.dispose();
+    for (const texture of this.groundExtras ?? []) texture.dispose();
+    this.groundExtras = [];
     this.worldParts.ground.geometry.dispose();
     this.worldParts.ground.material.dispose();
     this.worldParts.outer.geometry.dispose();
@@ -918,6 +935,7 @@ export class Renderer3D {
     this.updateNavigationArrow();
     this.updateZoneLabels(dt);
     this.lamps.update(getBrokenLamps(this.game), lampPose);
+    this.furniture.update?.(this.camera.position); // nivel de detalle de los modelos externos de la calle
     this.updateLampLights(dt, darkness);
     this.updateFades(dt);
     this.effects.update(dt, this.camera, this.cssH, this.pixelRatio);
@@ -1572,7 +1590,10 @@ export class Renderer3D {
   /** Datos de depuración para comprobar el rendimiento. */
   stats() {
     const { render, memory } = this.renderer.info;
-    return { calls: render.calls, triangles: render.triangles, geometries: memory.geometries, textures: memory.textures };
+    return {
+      calls: render.calls, triangles: render.triangles, geometries: memory.geometries, textures: memory.textures,
+      assets: assetSummary(),
+    };
   }
 
   destroy() {

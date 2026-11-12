@@ -28,6 +28,7 @@ import {
   concreteTexture, contactShadowTexture, corrugatedTexture, wallPanelTexture, withEnvironment, releaseEnvironment,
 } from './materials3d.js';
 import { createCharacter } from './characters3d.js';
+import { fittedSize, getModel, grayMap, hasTextureSet, modelGroup, modelInstances, pbrMap } from './assets3d.js';
 
 const BELT_TILE = 6; // px de banda por cada repetición de la textura
 const LABEL_DISTANCE = 130;
@@ -303,8 +304,16 @@ export function buildDepotInterior(depot) {
 
   // ------------------------------------------------------------------ Nave: suelo, paredes y techo ----
   // Solera de hormigón pulido con juntas de retracción cada 48 px (textura repetida)
-  const floor = plane(W + 6, D + 6, standard({ map: repeated(concreteTexture(), (W + 6) / 48, (D + 6) / 48), roughness: 0.74, metalness: 0 }),
-    midX, 0.6, midZ, 0, -Math.PI / 2);
+  const floorMaterial = standard({ map: repeated(concreteTexture(), (W + 6) / 48, (D + 6) / 48), roughness: 0.74, metalness: 0 });
+  // Con el hormigón escaneado de ambientCG: su relieve y su rugosidad real encima de las juntas procedurales
+  const owned = (texture) => { if (texture) textures.push(texture); return texture; };
+  if (hasTextureSet('concrete')) {
+    const normal = owned(pbrMap('concrete', 'normal', [(W + 6) / 40, (D + 6) / 40]));
+    if (normal) { floorMaterial.normalMap = normal; floorMaterial.normalScale.set(0.6, 0.6); }
+    floorMaterial.roughnessMap = owned(pbrMap('concrete', 'roughness', [(W + 6) / 40, (D + 6) / 40]));
+    floorMaterial.roughness = 0.9;
+  }
+  const floor = plane(W + 6, D + 6, floorMaterial, midX, 0.6, midZ, 0, -Math.PI / 2);
   floor.receiveShadow = true;
   // Paneles sándwich nervados: cada tramo de pared lleva su repetición (un panel cada 32 px)
   const wallMat = (len, height) => standard({ map: repeated(wallPanelTexture(), len / 32, 1), roughness: 0.82, metalness: 0.05, color: '#f4f1ea' });
@@ -313,8 +322,19 @@ export function buildDepotInterior(depot) {
   plane(D, CEILING, wallMat(D, CEILING), inner.x1, CEILING / 2, midZ, -Math.PI / 2); // derecha
   plane(W, CEILING - OPENING_HEIGHT, wallMat(W, CEILING - OPENING_HEIGHT), midX, (CEILING + OPENING_HEIGHT) / 2, inner.y1, Math.PI); // sobre el hueco
   // Cubierta de chapa grecada (vista desde abajo)
-  plane(W, D, standard({ map: repeated(corrugatedTexture(), W / 12, D / 60), roughness: 0.62, metalness: 0.35, color: '#d6d8dc' }, 0.2),
-    midX, CEILING, midZ, 0, Math.PI / 2);
+  const sheetMap = hasTextureSet('corrugated') ? owned(grayMap('corrugated', [W / 30, D / 30], 0.82)) : null;
+  const roofSheet = sheetMap
+    ? standard({
+      // Chapa grecada escaneada (ambientCG): color en gris teñido, relieve, rugosidad y metal reales
+      map: sheetMap,
+      normalMap: owned(pbrMap('corrugated', 'normal', [W / 30, D / 30])),
+      roughnessMap: owned(pbrMap('corrugated', 'roughness', [W / 30, D / 30])),
+      metalnessMap: owned(pbrMap('corrugated', 'metalness', [W / 30, D / 30])),
+      roughness: 1, metalness: 0.6, color: '#d6d8dc',
+    }, 0.2)
+    : standard({ map: repeated(corrugatedTexture(), W / 12, D / 60), roughness: 0.62, metalness: 0.35, color: '#d6d8dc' }, 0.2);
+  if (!roofSheet.metalnessMap) roofSheet.metalness = 0.35;
+  plane(W, D, roofSheet, midX, CEILING, midZ, 0, Math.PI / 2);
   // Zócalo de hormigón con banda de color de la empresa
   for (const [cx, cz, w, d] of [[midX, inner.y0 + 0.7, W, 1.4], [inner.x0 + 0.7, midZ, 1.4, D], [inner.x1 - 0.7, midZ, 1.4, D]]) {
     block(cx, cz, w, d, 0.6, 3.2, '#a7a49c', 0, 'matte', 'bevel');
@@ -453,18 +473,31 @@ export function buildDepotInterior(depot) {
   const dc = centerOf(desk);
   const dw = desk.x1 - desk.x0;
   const dd = desk.y1 - desk.y0;
-  // Mesa de oficina: tablero de madera con canto, estructura de acero en "T" y buc de cajones
-  rblock(dc.x, dc.y, dw, dd, TABLE_HEIGHT - 0.9, 0.9, '#b98b5e', 'wood');
-  for (const x of [desk.x0 + 1.2, desk.x1 - 9.5]) {
-    steel(x, dc.y, 1.2, dd - 1.6, 0.6, 0.5, '#3a3f47'); // pie
-    steel(x, dc.y, 1.2, 1.2, 0.6, TABLE_HEIGHT - 1.5, '#3a3f47'); // columna
-    steel(x, dc.y, 1.2, dd - 2, TABLE_HEIGHT - 1.6, 0.7, '#3a3f47'); // brazo bajo el tablero
-  }
-  block(dc.x - 2, desk.y0 + 1.2, dw - 10, 0.4, 2.4, TABLE_HEIGHT - 3.4, '#8f7a63', 0, 'wood'); // faldón
-  rblock(desk.x1 - 4.4, dc.y, 7, dd - 1.2, 0.6, TABLE_HEIGHT - 1.6, '#e7e3dc', 'painted'); // buc
-  for (const y of [1.0, 3.2, 5.4]) {
-    block(desk.x1 - 4.4, desk.y1 - 0.62, 6.4, 0.12, y, 2, '#f1eee8', 0, 'painted', 'bevel');
-    cyl(desk.x1 - 4.4, y + 1.5, desk.y1 - 0.45, 0.35, 2.2, 0.35, '#c8ccd2', 0, 0, Math.PI / 2, 'chrome');
+  const deskModel = getModel('officeDesk');
+  let lampX0 = desk.x0; // borde izquierdo del tablero (el flexo se apoya ahí)
+  if (deskModel) {
+    // Mesa metálica escaneada (Poly Haven, CC0) encajada en la huella de la mesa del juego: su tablero queda a
+    // TABLE_HEIGHT, donde se apoyan el monitor, el teclado y el resto (la colisión es la misma de siempre)
+    const CARPET = 0.74;
+    const deskFit = { size: [dw, TABLE_HEIGHT - CARPET, dd], mode: 'height', maxStretch: 1.45 };
+    const deskMesh = modelGroup(deskModel, deskFit);
+    deskMesh.position.set(dc.x, CARPET, dc.y);
+    lampX0 = Math.max(desk.x0, dc.x - fittedSize(deskModel, deskFit)[0] / 2 + 0.6);
+    group.add(deskMesh);
+  } else {
+    // Mesa de oficina: tablero de madera con canto, estructura de acero en "T" y buc de cajones
+    rblock(dc.x, dc.y, dw, dd, TABLE_HEIGHT - 0.9, 0.9, '#b98b5e', 'wood');
+    for (const x of [desk.x0 + 1.2, desk.x1 - 9.5]) {
+      steel(x, dc.y, 1.2, dd - 1.6, 0.6, 0.5, '#3a3f47'); // pie
+      steel(x, dc.y, 1.2, 1.2, 0.6, TABLE_HEIGHT - 1.5, '#3a3f47'); // columna
+      steel(x, dc.y, 1.2, dd - 2, TABLE_HEIGHT - 1.6, 0.7, '#3a3f47'); // brazo bajo el tablero
+    }
+    block(dc.x - 2, desk.y0 + 1.2, dw - 10, 0.4, 2.4, TABLE_HEIGHT - 3.4, '#8f7a63', 0, 'wood'); // faldón
+    rblock(desk.x1 - 4.4, dc.y, 7, dd - 1.2, 0.6, TABLE_HEIGHT - 1.6, '#e7e3dc', 'painted'); // buc
+    for (const y of [1.0, 3.2, 5.4]) {
+      block(desk.x1 - 4.4, desk.y1 - 0.62, 6.4, 0.12, y, 2, '#f1eee8', 0, 'painted', 'bevel');
+      cyl(desk.x1 - 4.4, y + 1.5, desk.y1 - 0.45, 0.35, 2.2, 0.35, '#c8ccd2', 0, 0, Math.PI / 2, 'chrome');
+    }
   }
   // Ordenador: monitor fino con peana, teclado, ratón, altavoz, taza, papeles y lámpara de mesa
   const pc = office.computer;
@@ -486,10 +519,10 @@ export function buildDepotInterior(depot) {
   block(pc.x + 9, pc.y + 0.5, 3.4, 4.4, TABLE_HEIGHT, 0.25, '#f4f1ea', 0.2, 'matte');
   block(pc.x + 9.3, pc.y + 0.3, 3.4, 4.4, TABLE_HEIGHT + 0.25, 0.08, '#fbfaf6', -0.1, 'matte');
   // Lámpara de flexo en el extremo de la mesa
-  cyl(desk.x0 + 3, TABLE_HEIGHT + 0.2, desk.y0 + 3, 2.2, 0.4, 2.2, '#2b2f38', 0, 0, 0, 'painted', 'rcyl');
-  tube(desk.x0 + 3, TABLE_HEIGHT + 0.4, desk.y0 + 3, desk.x0 + 3.6, TABLE_HEIGHT + 6.5, desk.y0 + 3.4, 0.22, '#c8ccd2', 'chrome');
-  tube(desk.x0 + 3.6, TABLE_HEIGHT + 6.5, desk.y0 + 3.4, desk.x0 + 6.5, TABLE_HEIGHT + 7.2, desk.y0 + 4.6, 0.2, '#c8ccd2', 'chrome');
-  cyl(desk.x0 + 7, TABLE_HEIGHT + 6.6, desk.y0 + 4.8, 2, 1.6, 2, '#2b2f38', 0.5, 0, 0.2, 'painted', 'cone');
+  cyl(lampX0 + 3, TABLE_HEIGHT + 0.2, desk.y0 + 3, 2.2, 0.4, 2.2, '#2b2f38', 0, 0, 0, 'painted', 'rcyl');
+  tube(lampX0 + 3, TABLE_HEIGHT + 0.4, desk.y0 + 3, lampX0 + 3.6, TABLE_HEIGHT + 6.5, desk.y0 + 3.4, 0.22, '#c8ccd2', 'chrome');
+  tube(lampX0 + 3.6, TABLE_HEIGHT + 6.5, desk.y0 + 3.4, lampX0 + 6.5, TABLE_HEIGHT + 7.2, desk.y0 + 4.6, 0.2, '#c8ccd2', 'chrome');
+  cyl(lampX0 + 7, TABLE_HEIGHT + 6.6, desk.y0 + 4.8, 2, 1.6, 2, '#2b2f38', 0.5, 0, 0.2, 'painted', 'cone');
   // Silla de oficina giratoria (mirando a la mesa): base de cinco radios con ruedas, pistón y respaldo
   const ch = office.chair;
   for (let k = 0; k < 5; k++) {
@@ -718,6 +751,14 @@ export function buildDepotInterior(depot) {
 
   // ------------------------------------------------------------------ Recepción y columnas ----
   const rec = L.reception;
+  // Modelos escaneados (Poly Haven, CC0) para la mercancía de recepción: cajas de plástico apiladas sobre el
+  // primer palé y contenedores industriales junto a la maquinaria del segundo. Sin ellos, cajas de cartón.
+  const crateModel = getModel('crate');
+  const containerModel = getModel('container');
+  const crates = [];
+  const containers = [];
+  let crateFit = null;
+  let containerFit = null;
   L.reception.pallets.forEach((r, i) => {
     const c = centerOf(r);
     const w = r.x1 - r.x0;
@@ -728,18 +769,42 @@ export function buildDepotInterior(depot) {
     for (let k = 0; k < 7; k++) block(c.x, r.y0 + 0.9 + k * ((d - 1.8) / 6), w, 1.5, 1.35, 0.35, k % 3 ? '#c49a68' : '#b78a5a', 0, 'wood', 'bevel');
     shadowRect(r, 0.5, 2.5);
     const layers = i === 0 ? 2 : 1;
+    const qw = w / 2 - 0.8;
+    const qd = d / 2 - 0.8;
+    const topOfBoxes = 1.7 + 5.1; // cara superior de la primera capa de cajas
     for (let layer = 0; layer < layers; layer++) {
       for (const sx of [-1, 1]) {
         for (const sz of [-1, 1]) {
-          model(boxParts([w / 2 - 0.8, 5, d / 2 - 0.8], layer ? '#2a9d8f' : null), c.x + sx * w / 4, 1.7 + layer * 5.1, c.y + sz * d / 4);
+          const x = c.x + sx * w / 4;
+          const z = c.y + sz * d / 4;
+          if (layer === 1 && crateModel) {
+            // Dos cajas de plástico apiladas por cuadrante, a su tamaño (sin deformarlas)
+            crateFit ??= { size: [qw, 2.8, qd], mode: 'contain' };
+            const h = fittedSize(crateModel, crateFit)[1];
+            for (let k = 0; k < 2; k++) crates.push({ x, y: topOfBoxes + 0.05 + k * (h + 0.02), z, rotY: (sx * sz > 0 ? 0 : Math.PI) });
+            continue;
+          }
+          model(boxParts([qw, 5, qd], layer ? '#2a9d8f' : null), x, 1.7 + layer * 5.1, z);
         }
       }
     }
     if (i === 1) {
       model(productParts('Lavadora'), c.x - w / 4, 6.8, c.y - d / 4);
       model(productParts('Maquinaria ligera'), c.x + w / 4, 6.8, c.y + d / 4, 0.3);
+      if (containerModel) {
+        // Los dos cuadrantes libres de encima: contenedores industriales con tapa
+        containerFit ??= { size: [qw - 0.4, 6, qd - 0.4], mode: 'contain' };
+        containers.push({ x: c.x + w / 4, y: topOfBoxes + 0.05, z: c.y - d / 4, rotY: 0 });
+        containers.push({ x: c.x - w / 4, y: topOfBoxes + 0.05, z: c.y + d / 4, rotY: Math.PI });
+      }
     }
   });
+  for (const [m, fit, list] of [[crateModel, crateFit, crates], [containerModel, containerFit, containers]]) {
+    if (!m || !list.length) continue;
+    const handle = modelInstances(m, fit, list);
+    group.add(handle.group);
+    disposables.push(handle);
+  }
   // Puerta seccional de recepción: lamas de chapa, guías, cajón del motor y botonera
   const rd = rec.rollerDoor;
   const rdc = (rd.x0 + rd.x1) / 2;

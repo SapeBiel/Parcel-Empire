@@ -7,6 +7,7 @@ import { getGlowTexture, getHazardTexture } from './textures3d.js';
 import { buildTreeMeshes } from './vegetation3d.js';
 import { mergeGeometries } from './geometries3d.js';
 import { releaseEnvironment, surfaceTexture, withEnvironment } from './materials3d.js';
+import { fittedSize, getModel, lodInstances } from './assets3d.js';
 
 /** Sólido de revolución a partir de un perfil [[radio, y], ...] en px (de abajo arriba). */
 function lathe(profile, segments) {
@@ -492,6 +493,8 @@ export function buildStreetFurniture(city) {
   // --- Señales de tráfico en algunas esquinas, en la acera, mirando al tráfico que llega al cruce
   const signs = { stop: [], yield: [], walk: [] };
   const poles = [];
+  const utilityModel = getModel('utilityBox');
+  const utilityBoxes = [];
   const hash = (n) => {
     let t = (n * 2654435761) >>> 0;
     t ^= t >>> 15;
@@ -508,7 +511,11 @@ export function buildStreetFurniture(city) {
     const cornerList = [[x0, z0, 1, 1], [x1, z0, -1, 1], [x1, z1, -1, -1], [x0, z1, 1, -1]];
     cornerList.forEach(([cx, cz, ix, iz], ci) => {
       const roll = hash(bi * 7 + ci * 131 + 17);
-      if (roll > 0.42) return;
+      if (roll > 0.42) {
+        // En otras esquinas, un armario eléctrico de calle (modelo escaneado) pegado a la fachada de la acera
+        if (utilityModel && roll < 0.6) utilityBoxes.push({ x: cx - ix * 3.0, z: cz + iz * 30, rotY: -ix * Math.PI / 2 });
+        return;
+      }
       const kind = roll < 0.16 ? 'stop' : roll < 0.28 ? 'yield' : 'walk';
       // En la acera de la calle vertical, a 18 px de la esquina, de cara a los coches que se acercan
       const x = cx - ix * 3.2;
@@ -547,9 +554,28 @@ export function buildStreetFurniture(city) {
     }
   }
 
+  // Armarios eléctricos (Poly Haven, CC0) con nivel de detalle: el modelo real cerca de la cámara y una caja
+  // sencilla de su mismo tamaño a lo lejos (hay decenas por la ciudad)
+  let utilityLod = null;
+  if (utilityModel && utilityBoxes.length) {
+    const fit = { size: [4.4, 9.3, 3.6], mode: 'height', maxStretch: 1.15 };
+    const [sx, sy, sz] = fittedSize(utilityModel, fit);
+    const lowGeometry = new THREE.BoxGeometry(sx, sy, sz).translate(0, sy / 2, 0);
+    const lowMaterial = new THREE.MeshLambertMaterial({ color: '#9aa39a' });
+    geometries.push(lowGeometry);
+    materials.push(lowMaterial);
+    utilityLod = lodInstances(utilityModel, fit, utilityBoxes, { near: 240, lowGeometry, lowMaterial, maxNear: 16 });
+    group.add(utilityLod.group);
+  }
+
   return {
     group,
+    /** Nivel de detalle de los modelos externos (se llama cada fotograma con la posición de la cámara). */
+    update(cameraPosition) {
+      utilityLod?.update(cameraPosition);
+    },
     dispose() {
+      utilityLod?.dispose();
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) {
         releaseEnvironment(material);

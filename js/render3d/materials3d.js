@@ -11,6 +11,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { createRng } from '../core/random.js';
 import { makeCanvas, toTexture } from './textures3d.js';
+import { assetMaterials, hasTextureSet, pbrMap } from './assets3d.js';
 
 // ------------------------------------------------------------ Reflejos ----
 
@@ -287,21 +288,22 @@ export function groundGrainTexture() {
  * Añade a un material Lambert/Standard con "map" una textura de detalle que se repite `repeat` (vec2) veces
  * sobre sus UV y multiplica el color. Se desvanece con la distancia para no hacer moiré a lo lejos.
  */
-export function addDetailMap(material, texture, repeat, strength = 0.35, far = 900) {
+export function addDetailMap(material, texture, repeat, strength = 0.35, far = 900, mean = 0.5) {
   const uniforms = {
     detailMap: { value: texture },
     detailRepeat: { value: new THREE.Vector2(repeat[0], repeat[1]) },
     detailStrength: { value: strength },
     detailFar: { value: far },
+    detailMean: { value: mean }, // brillo medio de la textura de detalle (lo que no aclara ni oscurece)
   };
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
-    shader.fragmentShader = `uniform sampler2D detailMap;\nuniform vec2 detailRepeat;\nuniform float detailStrength;\nuniform float detailFar;\n${shader.fragmentShader}`
+    shader.fragmentShader = `uniform sampler2D detailMap;\nuniform vec2 detailRepeat;\nuniform float detailStrength;\nuniform float detailFar;\nuniform float detailMean;\n${shader.fragmentShader}`
       .replace('#include <map_fragment>', `#include <map_fragment>
 #ifdef USE_MAP
   float detailFade = clamp(1.0 - length(vViewPosition) / detailFar, 0.0, 1.0);
   float detailValue = texture2D(detailMap, vMapUv * detailRepeat).r;
-  diffuseColor.rgb *= mix(1.0, 0.55 + detailValue * 0.9, detailStrength * detailFade);
+  diffuseColor.rgb *= mix(1.0, 1.0 + (detailValue - detailMean) * 0.9, detailStrength * detailFade);
 #endif`);
   };
   material.customProgramCacheKey = () => 'detailMap';
@@ -395,10 +397,43 @@ export function finishMaterial(finish, kind = 'box', basic = false) {
       material.emissiveIntensity = spec.emissive;
     }
     if (spec.env) withEnvironment(material, spec.env);
+    addScannedDetail(material, finish);
   }
   material.userData.shared = true;
   finishCache.set(key, material);
   return material;
+}
+
+/**
+ * Si están descargados los materiales PBR de ambientCG (ver config/assets.js), el cartón y la madera ganan
+ * su relieve real (mapa normal) y su rugosidad; el color sigue siendo el de cada pieza.
+ */
+const scannedMaps = new Map(); // una sola copia de cada mapa para todos los materiales (no se liberan)
+function scannedMap(key, map) {
+  const id = `${key}|${map}`;
+  if (!scannedMaps.has(id)) scannedMaps.set(id, pbrMap(key, map));
+  return scannedMaps.get(id);
+}
+
+function addScannedDetail(material, finish) {
+  const key = finish === 'cardboard' ? 'cardboard' : finish === 'wood' ? 'wood' : null;
+  if (!key || !hasTextureSet(key)) return;
+  const normal = scannedMap(key, 'normal');
+  if (normal) {
+    material.normalMap = normal;
+    const k = key === 'wood' ? 0.6 : 0.9;
+    material.normalScale.set(k, k);
+  }
+  const roughness = scannedMap(key, 'roughness');
+  if (roughness) material.roughnessMap = roughness; // multiplica la rugosidad del acabado
+  material.needsUpdate = true;
+}
+
+/** Los materiales de los modelos externos también reflejan el cielo pre-calculado. */
+export function registerAssetMaterials() {
+  for (const material of assetMaterials()) {
+    if (material.isMeshStandardMaterial && !envMaterials.has(material)) withEnvironment(material, 0.6);
+  }
 }
 
 /** Material propio (no compartido) de un acabado con un color: para modelos sueltos (lo que se lleva en las manos). */
@@ -417,6 +452,7 @@ export function ownFinishMaterial(finish, color, kind = 'box') {
     material.emissiveIntensity = spec.emissive;
   }
   if (spec.env) withEnvironment(material, spec.env);
+  addScannedDetail(material, finish);
   return material;
 }
 

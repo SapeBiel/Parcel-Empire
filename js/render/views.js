@@ -69,6 +69,9 @@ export class ViewManager {
     this.loading = true;
     try {
       if (!this.renderer3d) {
+        // Modelos y texturas externos opcionales (assets/): se cargan antes de construir la escena
+        const { preloadAssets } = await import('../render3d/assets3d.js');
+        await preloadAssets();
         const { Renderer3D } = await import('../render3d/renderer3d.js');
         this.renderer3d = new Renderer3D({
           canvas: this.canvas3d,

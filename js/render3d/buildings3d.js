@@ -14,6 +14,7 @@ import {
   makeSignTexture, toTexture, wallWindowLayout,
 } from './textures3d.js';
 import { roofTileTexture } from './materials3d.js';
+import { grayMap, hasTextureSet, pbrMap } from './assets3d.js';
 import { buildTreeMeshes } from './vegetation3d.js';
 import { crownGeometry } from './geometries3d.js';
 
@@ -153,12 +154,22 @@ function dimmed(hex, locked) {
 // ------------------------------------------------------------ Tejados ----
 
 const roofMaterials = new Map();
+let scannedRoof = null; // teja escaneada de ambientCG (gris para teñirla + relieve), compartida por todos los tejados
 /** Teja cerámica: textura de hiladas teñida con el color del tejado (compartida). */
 function roofMaterial(color, locked) {
   const key = `${color}|${locked}`;
   let material = roofMaterials.get(key);
   if (!material) {
-    material = new THREE.MeshLambertMaterial({ color: dimmed(color, locked), map: roofTileTexture() });
+    if (scannedRoof === null) {
+      scannedRoof = hasTextureSet('roofTiles')
+        ? { map: grayMap('roofTiles', [1, 1], 0.78), normal: pbrMap('roofTiles', 'normal') }
+        : false;
+    }
+    material = new THREE.MeshLambertMaterial({ color: dimmed(color, locked), map: (scannedRoof && scannedRoof.map) || roofTileTexture() });
+    if (scannedRoof?.normal) {
+      material.normalMap = scannedRoof.normal;
+      material.normalScale.set(1.1, 1.1);
+    }
     roofMaterials.set(key, material);
   }
   return material;

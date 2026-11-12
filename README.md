@@ -33,7 +33,32 @@ Las partidas guardadas con la versión anterior (ciudad fija) conservan el progr
 
 El modo 3D usa un post-procesado propio: imagen HDR con antialiasing, brillo (bloom) en luces, faros y ventanas de noche, mapeo de tonos ACES, corrección de color según la hora (cálida al atardecer, azulada de noche), viñeta y un grano muy suave. Las torres de cristal reflejan el cielo y hay nubes que se mueven con el viento. Las etiquetas y pines se pintan encima, sin filtros, para que se lean bien.
 
-Estilo semirrealista sin imágenes externas: todas las texturas (hormigón, chapa, madera, cartón, corteza, tejas, ladrillo, fachadas, asfalto) se generan con ruido por código (`render3d/materials3d.js`) y las piezas con cantos biselados, neumáticos torneados, copas de árbol irregulares y coníferas salen de `render3d/geometries3d.js`. El almacén tiene estanterías de rack, cinta con rodillos y bastidores, oficina acristalada, focos industriales y sombras de contacto bajo los muebles; los trabajadores están articulados (rodillas, codos, chaleco reflectante y guantes). En la calle hay tejados de teja con canalones, alféizares y balcones, bordillos en volumen, alcantarillas, rejillas, rodadas y grietas en el asfalto, baldosas en las aceras, farolas torneadas, bancos, papeleras, señales de tráfico y fuentes de piedra. Todo es decorativo: no cambia colisiones, rutas ni posiciones. Para que siga yendo fluido, cada edificio junta sus piezas en una malla por material y el mobiliario y los árboles van instanciados (`window.__game` y `stats()` del renderizador muestran llamadas de dibujo y triángulos). En primera persona se ven las manos con guantes sujetando la caja por los lados o el producto por debajo.
+Estilo semirrealista que funciona sin imágenes externas: por defecto todas las texturas (hormigón, chapa, madera, cartón, corteza, tejas, ladrillo, fachadas, asfalto) se generan con ruido por código (`render3d/materials3d.js`) y las piezas con cantos biselados, neumáticos torneados, copas de árbol irregulares y coníferas salen de `render3d/geometries3d.js`. El almacén tiene estanterías de rack, cinta con rodillos y bastidores, oficina acristalada, focos industriales y sombras de contacto bajo los muebles; los trabajadores están articulados (rodillas, codos, chaleco reflectante y guantes). En la calle hay tejados de teja con canalones, alféizares y balcones, bordillos en volumen, alcantarillas, rejillas, rodadas y grietas en el asfalto, baldosas en las aceras, farolas torneadas, bancos, papeleras, señales de tráfico y fuentes de piedra. Todo es decorativo: no cambia colisiones, rutas ni posiciones. Para que siga yendo fluido, cada edificio junta sus piezas en una malla por material y el mobiliario y los árboles van instanciados (`window.__game` y `stats()` del renderizador muestran llamadas de dibujo y triángulos). En primera persona se ven las manos con guantes sujetando la caja por los lados o el producto por debajo.
+
+### Modelos y materiales escaneados (opcional, CC0)
+
+El juego puede usar recursos fotoescaneados gratuitos con licencia **CC0** (dominio público: uso comercial permitido, sin atribución obligatoria; se acredita igualmente en `assets/CREDITS.txt`). No vienen incluidos: se descargan una vez con
+
+```
+powershell -ExecutionPolicy Bypass -File tools\download-assets.ps1
+```
+
+que deja todo en `assets/` (unos 25-35 MB) y genera `assets/manifest.json`. Después el juego funciona sin conexión. Si no se descargan, o falta alguno, se usan los modelos y texturas procedurales de siempre.
+
+| Recurso | Origen | Dónde se usa |
+|---|---|---|
+| `metal_office_desk` | [Poly Haven](https://polyhaven.com/a/metal_office_desk) | Mesa de la oficina (misma huella y altura que la mesa del juego) |
+| `plastic_crate_02` | [Poly Haven](https://polyhaven.com/a/plastic_crate_02) | Cajas de plástico apiladas en el primer palé de recepción |
+| `industrial_pastic_container` | [Poly Haven](https://polyhaven.com/a/industrial_pastic_container) | Contenedores junto a la maquinaria del segundo palé |
+| `utility_box_01` | [Poly Haven](https://polyhaven.com/a/utility_box_01) | Armarios eléctricos en algunas esquinas (modelo real cerca, caja sencilla lejos) |
+| `Asphalt025C` | [ambientCG](https://ambientcg.com/a/Asphalt025C) | Grano y relieve del asfalto y las aceras |
+| `Concrete034` | [ambientCG](https://ambientcg.com/a/Concrete034) | Relieve y rugosidad de la solera del almacén |
+| `RoofingTiles007` | [ambientCG](https://ambientcg.com/a/RoofingTiles007) | Tejas de las casas (teñidas con el color de cada tejado) |
+| `CorrugatedSteel005` | [ambientCG](https://ambientcg.com/a/CorrugatedSteel005) | Cubierta de chapa del almacén |
+| `Cardboard004` | [ambientCG](https://ambientcg.com/a/Cardboard004) | Relieve del cartón de todas las cajas |
+| `WoodFloor043` | [ambientCG](https://ambientcg.com/a/WoodFloor043) | Relieve de los palés y piezas de madera |
+
+Los modelos se cargan con un lector glTF propio (`render3d/gltf3d.js`, sin dependencias) y se encajan en la caja del objeto que sustituyen (`render3d/assets3d.js`), así que no cambian colisiones, rutas ni posiciones. La lista está en `js/config/assets.js`; si un modelo sale girado, se corrige con su `yaw`. Los vehículos, los personajes y los árboles siguen siendo procedurales: no hay modelos CC0 semirrealistas adecuados (Poly Haven no tiene vehículos y sus árboles pasan de 150 000 polígonos; Kenney y Quaternius son de estilo low-poly caricaturesco, y los vehículos de Sketchfab son CC-BY, requieren cuenta y perderían la rotulación con la marca de la empresa).
 
 En **Menú → Gráficos 3D** se elige la calidad (se guarda): **Alta** (todo, sombras de 4096 px), **Media** (sin brillo, sombras de 2048 px, resolución algo menor) o **Baja** (sin post-procesado ni nubes, para ordenadores lentos).
 
@@ -112,6 +137,8 @@ js/vendor/            Three.js (r160, MIT)
 js/ui/                Interfaz: HUD, paneles, modales, notificaciones, sonido, entrada
 tests/                Pruebas automáticas en el navegador
 tools/static-check.ps1 Comprobación estática sin Node (llaves e importaciones)
+tools/download-assets.ps1 Descarga opcional de modelos y materiales CC0 a assets/
+assets/               (se crea al descargar) modelos glTF, texturas PBR, manifest.json y CREDITS.txt
 ```
 
 La lógica (`js/core`, `js/systems`, `js/world`) no usa DOM ni canvas; el renderizado y la interfaz solo leen el estado y escuchan eventos.
